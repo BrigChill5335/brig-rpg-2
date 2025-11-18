@@ -1,0 +1,72 @@
+name: Build Project and Create Release
+
+on:
+  push:
+    tags:
+      - 'v*' # Запускается при пуше тегов, начинающихся с 'v' (например, v1.0.0)
+  workflow_dispatch: # Позволяет запускать workflow вручную из интерфейса GitHub
+
+jobs:
+  build:
+    name: Build Project
+    runs-on: windows-latest # Используем Windows, так как проект, вероятно, требует MSVC
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v5
+
+      - name: Configure with CMake
+        run: cmake -A Win32 -B build
+
+      - name: Build Project
+        run: cmake --build build --config Release
+
+      - name: Create Distribution Archive
+        run: |
+          mkdir dist
+          cp build/dlls/Release/*.dll dist/
+          cp build/cl_dll/Release/*.dll dist/
+          # Добавь сюда другие файлы, которые должны быть в релизе (README, и т.д.)
+          7z a -r brig-rpg-2-release-${{ github.ref_name }}.zip .\dist\*
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-outputs
+          path: |
+            build/dlls/Release/*.dll
+            build/cl_dll/Release/*.dll
+          retention-days: 7
+
+      - name: Upload Release Archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-package
+          path: brig-rpg-2-release-${{ github.ref_name }}.zip
+          retention-days: 7
+
+  create-release:
+    name: Create GitHub Release
+    needs: build # Этот job зависит от успешного завершения job `build`
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Дает разрешение на создание релиза
+    steps:
+      - name: Download Release Archive
+        uses: actions/download-artifact@v4
+        with:
+          name: release-package
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref_name }}
+          body: |
+            Автоматически собранный релиз для версии ${{ github.ref_name }}.
+            ### Что нового
+            - Сборка выполнена автоматически через GitHub Actions
+            - Файлы мода упакованы в архив
+          files: |
+            brig-rpg-2-release-${{ github.ref_name }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
