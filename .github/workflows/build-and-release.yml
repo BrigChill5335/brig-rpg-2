@@ -76,11 +76,12 @@ jobs:
         if ($env:GITHUB_REF -like "refs/tags/*") {
             $version = $env:GITHUB_REF -replace "refs/tags/", ""
         } else {
-            $version = "dev-build"
+            $version = "manual-$((Get-Date).ToString('yyyyMMdd-HHmmss'))"
         }
         
         # Создаем архив с помощью Compress-Archive (встроенный в PowerShell)
         Compress-Archive -Path "release_package/*" -DestinationPath "brig-rpg-2-$version.zip" -Force
+        echo "Создан архив: brig-rpg-2-$version.zip"
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
@@ -102,7 +103,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    if: startsWith(github.ref, 'refs/tags/')
+    # Убрали условие с тегами, чтобы релиз создавался всегда после успешной сборки
+    if: ${{ always() && needs.build.result == 'success' }}
     
     steps:
     - name: Download Artifact
@@ -110,11 +112,30 @@ jobs:
       with:
         name: mod-package
 
+    - name: Determine Release Info
+      id: release-info
+      run: |
+        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          TAG_NAME="${{ github.ref_name }}"
+          RELEASE_NAME="Release ${{ github.ref_name }}"
+          IS_PRERELEASE="false"
+        else
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          TAG_NAME="manual-$TIMESTAMP"
+          RELEASE_NAME="Manual Build $TIMESTAMP"
+          IS_PRERELEASE="true"
+        fi
+        echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
+        echo "release_name=$RELEASE_NAME" >> $GITHUB_OUTPUT
+        echo "prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+        echo "Создаем релиз: $RELEASE_NAME (тег: $TAG_NAME, prerelease: $IS_PRERELEASE)"
+
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
       with:
-        tag_name: ${{ github.ref_name }}
-        release_name: Release ${{ github.ref_name }}
+        tag_name: ${{ steps.release-info.outputs.tag_name }}
+        release_name: ${{ steps.release-info.outputs.release_name }}
+        prerelease: ${{ steps.release-info.outputs.prerelease }}
         body: |
           Автоматически собранный релиз мода Brig RPG 2
           
@@ -133,6 +154,12 @@ jobs:
             │   └── cl_dlls/client.dll
             ```
           3. Запустите игру с параметром `-game brigrpg`
+          
+          ## Информация о сборке
+          - **Тип:** ${{ steps.release-info.outputs.prerelease == 'true' && 'Ручная сборка' || 'Релиз по тегу' }}
+          - **Ветка:** ${{ github.ref_name }}
+          - **Коммит:** ${{ github.sha }}
+          - **Дата:** ${{ fromJSON('["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"]')[github.event.head_commit.timestamp[5:7]-1] }} ${{ github.event.head_commit.timestamp[8:10] }}, ${{ github.event.head_commit.timestamp[0:4] }}
         files: brig-rpg-2-*.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
