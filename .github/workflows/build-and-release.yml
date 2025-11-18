@@ -132,7 +132,7 @@ jobs:
             │   ├── dlls/hl.dll
             │   └── cl_dlls/client.dll
             ```
-          3. Запустите игру с параметром `-game brigrpg2`
+          3. Запустите игру с параметром `-game brigrpg`
         files: brig-rpg-2-*.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
