@@ -3,70 +3,83 @@ name: Build Project and Create Release
 on:
   push:
     tags:
-      - 'v*' # Запускается при пуше тегов, начинающихся с 'v' (например, v1.0.0)
-  workflow_dispatch: # Позволяет запускать workflow вручную из интерфейса GitHub
+      - 'v*'
+  workflow_dispatch:
 
 jobs:
   build:
     name: Build Project
-    runs-on: windows-latest # Используем Windows, так как проект, вероятно, требует MSVC
+    runs-on: windows-latest
+    
     steps:
-      - name: Checkout repository code
-        uses: actions/checkout@v5
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Configure with CMake
-        run: cmake -A Win32 -B build
+    - name: Find CMakeLists.txt
+      run: |
+        echo "Поиск CMakeLists.txt файлов в репозитории:"
+        dir CMakeLists.txt /s 2>nul || echo "CMakeLists.txt не найден в корне"
+        echo "Содержимое папки projects:"
+        dir projects
+        echo "Содержимое папки dlls:"
+        dir dlls
 
-      - name: Build Project
-        run: cmake --build build --config Release
+    - name: Try building from projects directory
+      run: |
+        cd projects
+        cmake -A Win32 -B build
+        cmake --build build --config Release
+      
+    - name: Check build results
+      run: |
+        echo "Поиск собранных DLL файлов:"
+        dir projects\build /s 2>nul || echo "Папка build не найдена в projects"
+        dir dlls /s 2>nul || echo "Папка dlls не содержит собранных файлов"
 
-      - name: Create Distribution Archive
-        run: |
-          mkdir dist
-          cp build/dlls/Release/*.dll dist/
-          cp build/cl_dll/Release/*.dll dist/
-          # Добавь сюда другие файлы, которые должны быть в релизе (README, и т.д.)
-          7z a -r brig-rpg-2-release-${{ github.ref_name }}.zip .\dist\*
-
-      - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-outputs
-          path: |
-            build/dlls/Release/*.dll
-            build/cl_dll/Release/*.dll
-          retention-days: 7
-
-      - name: Upload Release Archive
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-package
-          path: brig-rpg-2-release-${{ github.ref_name }}.zip
-          retention-days: 7
+    - name: Create release archive
+      run: |
+        # Создаем временную папку для релиза
+        mkdir release_files
+        # Копируем возможные DLL файлы
+        copy projects\build\dlls\Release\*.dll release_files\ 2>nul || echo "DLL не найдены в projects"
+        copy projects\build\cl_dll\Release\*.dll release_files\ 2>nul || echo "Client DLL не найдены"
+        
+        # Создаем архив
+        7z a -r brig-rpg-2-${{ github.ref_name }}.zip .\release_files\*
+        
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts
+        path: |
+          brig-rpg-2-${{ github.ref_name }}.zip
+          projects/build/
+        retention-days: 5
 
   create-release:
-    name: Create GitHub Release
-    needs: build # Этот job зависит от успешного завершения job `build`
+    name: Create Release
+    needs: build
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Дает разрешение на создание релиза
+      contents: write
     steps:
-      - name: Download Release Archive
-        uses: actions/download-artifact@v4
-        with:
-          name: release-package
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref_name }}
-          body: |
-            Автоматически собранный релиз для версии ${{ github.ref_name }}.
-            ### Что нового
-            - Сборка выполнена автоматически через GitHub Actions
-            - Файлы мода упакованы в архив
-          files: |
-            brig-rpg-2-release-${{ github.ref_name }}.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: build-artifacts
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref_name }}
+        body: |
+          Автоматически собранный релиз для версии ${{ github.ref_name }}
+          
+          ### Примечания
+          - Сборка выполнена через GitHub Actions
+          - Включает скомпилированные DLL файлы
+        files: |
+          brig-rpg-2-${{ github.ref_name }}.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
