@@ -25,30 +25,62 @@ jobs:
     - name: Verify Build Outputs
       run: |
         echo "Проверка собранных файлов:"
-        dir "projects\vs2019\Debug\hldll\" /s
-        dir "projects\vs2019\Debug\hl_cdll\" /s
+        echo "Содержимое projects/vs2019/Debug/hldll/:"
+        if (Test-Path "projects/vs2019/Debug/hldll") {
+            Get-ChildItem -Path "projects/vs2019/Debug/hldll" -Recurse
+        } else {
+            echo "Папка hldll не найдена"
+        }
+        
+        echo "Содержимое projects/vs2019/Debug/hl_cdll/:"
+        if (Test-Path "projects/vs2019/Debug/hl_cdll") {
+            Get-ChildItem -Path "projects/vs2019/Debug/hl_cdll" -Recurse
+        } else {
+            echo "Папка hl_cdll не найдена"
+        }
 
     - name: Create Release Package Structure
       run: |
-        mkdir release_package
-        mkdir release_package\dlls
-        mkdir release_package\cl_dlls
+        # Создаем структуру папок
+        New-Item -ItemType Directory -Force -Path "release_package/dlls"
+        New-Item -ItemType Directory -Force -Path "release_package/cl_dlls"
         
         # Копируем серверную DLL (hl.dll)
-        Copy-Item "projects\vs2019\Debug\hldll\hl.dll" "release_package\dlls\"
+        if (Test-Path "projects/vs2019/Debug/hldll/hl.dll") {
+            Copy-Item "projects/vs2019/Debug/hldll/hl.dll" "release_package/dlls/"
+            echo "hl.dll скопирован"
+        } else {
+            echo "ВНИМАНИЕ: hl.dll не найден!"
+        }
         
         # Копируем клиентскую DLL (client.dll)
-        Copy-Item "projects\vs2019\Debug\hl_cdll\client.dll" "release_package\cl_dlls\"
+        if (Test-Path "projects/vs2019/Debug/hl_cdll/client.dll") {
+            Copy-Item "projects/vs2019/Debug/hl_cdll/client.dll" "release_package/cl_dlls/"
+            echo "client.dll скопирован"
+        } else {
+            echo "ВНИМАНИЕ: client.dll не найден!"
+        }
         
         # Копируем документацию
-        Copy-Item "README.md" "release_package\" -ErrorAction SilentlyContinue
-        Copy-Item "INSTALL.md" "release_package\" -ErrorAction SilentlyContinue
-        Copy-Item "BUILDING.md" "release_package\" -ErrorAction SilentlyContinue
+        $filesToCopy = @("README.md", "INSTALL.md", "BUILDING.md")
+        foreach ($file in $filesToCopy) {
+            if (Test-Path $file) {
+                Copy-Item $file "release_package/"
+                echo "$file скопирован"
+            }
+        }
 
     - name: Create ZIP Archive
       run: |
-        $version = if ($env:GITHUB_REF -like "refs/tags/*") { $env:GITHUB_REF.Replace("refs/tags/", "") } else { "dev-build" }
-        7z a "brig-rpg-2-$version.zip" "release_package\*"
+        # Определяем версию из тега или используем dev-build
+        if ($env:GITHUB_REF -like "refs/tags/*") {
+            $version = $env:GITHUB_REF -replace "refs/tags/", ""
+        } else {
+            $version = "dev-build"
+        }
+        
+        # Создаем архив с помощью Compress-Archive (встроенный в PowerShell)
+        Compress-Archive -Path "release_package/*" -DestinationPath "brig-rpg-2-$version.zip" -Force
 
     - name: Upload Build Artifacts
       uses: actions/upload-artifact@v4
@@ -56,6 +88,13 @@ jobs:
         name: mod-package
         path: brig-rpg-2-*.zip
         retention-days: 30
+
+    - name: Show Final Package Contents
+      run: |
+        echo "Содержимое итогового пакета:"
+        if (Test-Path "release_package") {
+            Get-ChildItem -Path "release_package" -Recurse
+        }
 
   create-release:
     name: Create GitHub Release
@@ -70,10 +109,6 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: mod-package
-        path: ./artifacts
-
-    - name: Display structure of downloaded files
-      run: ls -la ./artifacts/
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v1
@@ -97,7 +132,7 @@ jobs:
             │   ├── dlls/hl.dll
             │   └── cl_dlls/client.dll
             ```
-          3. Запустите игру с параметром `-game brigrpg`
-        files: ./artifacts/brig-rpg-2-*.zip
+          3. Запустите игру с параметром `-game brigrpg2`
+        files: brig-rpg-2-*.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
