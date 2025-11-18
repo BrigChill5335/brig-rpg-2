@@ -90,21 +90,12 @@ jobs:
         path: brig-rpg-2-*.zip
         retention-days: 30
 
-    - name: Show Final Package Contents
-      run: |
-        echo "Содержимое итогового пакета:"
-        if (Test-Path "release_package") {
-            Get-ChildItem -Path "release_package" -Recurse
-        }
-
   create-release:
     name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    # Убрали условие с тегами, чтобы релиз создавался всегда после успешной сборки
-    if: ${{ always() && needs.build.result == 'success' }}
     
     steps:
     - name: Download Artifact
@@ -135,7 +126,7 @@ jobs:
       with:
         tag_name: ${{ steps.release-info.outputs.tag_name }}
         release_name: ${{ steps.release-info.outputs.release_name }}
-        prerelease: ${{ steps.release-info.outputs.prerelease }}
+        prerelease: ${{ steps.release-info.outputs.prerelease == 'true' }}
         body: |
           Автоматически собранный релиз мода Brig RPG 2
           
@@ -159,7 +150,6 @@ jobs:
           - **Тип:** ${{ steps.release-info.outputs.prerelease == 'true' && 'Ручная сборка' || 'Релиз по тегу' }}
           - **Ветка:** ${{ github.ref_name }}
           - **Коммит:** ${{ github.sha }}
-          - **Дата:** ${{ fromJSON('["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек"]')[github.event.head_commit.timestamp[5:7]-1] }} ${{ github.event.head_commit.timestamp[8:10] }}, ${{ github.event.head_commit.timestamp[0:4] }}
         files: brig-rpg-2-*.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
